@@ -1,6 +1,5 @@
 package com.jav.sitrack.simulator.service.impl;
 
-import java.nio.charset.Charset;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.text.SimpleDateFormat;
@@ -8,8 +7,6 @@ import java.time.Instant;
 import java.util.Collection;
 import java.util.Date;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jav.sitrack.simulator.model.GpsSimulatorInstance;
 import com.jav.sitrack.simulator.model.TrackRequest;
 import com.jav.sitrack.simulator.service.ISentStatusService;
@@ -19,9 +16,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
 
 @Service
@@ -60,56 +57,62 @@ public class SentStatusServiceImpl implements ISentStatusService {
             LOGGER.info("request=>" + trackRequest);
 
             RestTemplate restTemplate = new RestTemplate();
-            // restTemplate.put(REPORT_URI, trackRequest);
-            // String result = restTemplate.getForObject(REPORT_URI, String.class);
-
-            ObjectMapper mapper = new ObjectMapper();
-            String trackRequestString = "";
-            try {
-                trackRequestString = mapper.writeValueAsString(trackRequest);
-            } catch (JsonProcessingException e) {
-                LOGGER.error(e.toString());
-            }
 
             HttpHeaders headers = createHeaders();
             LOGGER.info("headers::" + headers);
-            HttpEntity<String> request = new HttpEntity<>(trackRequestString,headers);
-            //HttpEntity<String> request = new HttpEntity<>(headers);
-            ResponseEntity<String> response = restTemplate.exchange(REPORT_URI, HttpMethod.PUT, request, String.class);
 
-            LOGGER.info("response=>"+response.getBody());
-            //restTemplate.put(REPORT_URI, entity);
+            HttpEntity<TrackRequest> request = new HttpEntity<>(trackRequest,headers);
+            try {
+                ResponseEntity<TrackRequest> response = restTemplate.postForEntity(REPORT_URI, request, TrackRequest.class);
+                LOGGER.info("STATUS_CODE::"+response.getStatusCode());
+                LOGGER.info("BODY::"+response.getBody());
+            } catch(HttpStatusCodeException e) {
+                LOGGER.error("MESSAGE::" + e.getMessage());
+                LOGGER.error("STATUS_CODE:: " + e.getStatusCode());
+                LOGGER.error("HEADERS::" + e.getResponseHeaders());
+                //TODO retry
+            }
 
         }
 
     }
-    private HttpHeaders createHeaders() {
 
+    private HttpHeaders createHeaders() {
         String applicationString = "ReportGeneratorTest";
         String secretKeyString = "ccd517a1-d39d-4cf6-af65-28d65e192149";
-        Instant timestampObject = Instant.now();
+        Instant timestampInstant = Instant.now();
+        String timestampInstantString = String.valueOf(timestampInstant.getEpochSecond());
 
-        String signatureHash = applicationString + secretKeyString + timestampObject.getEpochSecond();
+        String signatureHash = applicationString + secretKeyString + timestampInstantString;
+        LOGGER.info("signatureHash::" + signatureHash);
+        String md5String = getMd5(signatureHash);
 
-        return new HttpHeaders() {
-                private static final long serialVersionUID = 1L;
-            {
-              try {
-                MessageDigest md = MessageDigest.getInstance("MD5");
-                byte[] md5Result = md.digest(signatureHash.getBytes(Charset.forName("US-ASCII")));
-                byte[] signatureByte = Base64.encodeBase64(md5Result);
-                
-                //Authorization: SWSAuth application="ID",signature="HASH",timestamp="SECONDS"
-                String application = "SWSAuth application=" + "\""+applicationString+"\"";
-                String signature = "signature=" + "\""+new String(signatureByte)+"\"";
-                String timestamp = "timestamp=" + "\""+timestampObject+"\"";
-                //String signature = application + " signature " + new String(signatureByte) + " " + timestamp;
-                String auth = application+"," + signature+"," + timestamp;
+        String application = "SWSAuth application=" + "\""+applicationString+"\"";
+        String signature = "signature=" + "\""+md5String+"\"";
+        String timestamp = "timestamp=" + "\""+timestampInstantString+"\"";
+        //String signature = application + " signature " + new String(signatureByte) + " " + timestamp;
+        String auth = application+"," + signature+"," + timestamp;
 
-                set( "Authorization: ", auth );
-            } catch (NoSuchAlgorithmException e) {
-                LOGGER.error(e.toString());
-            }
-           }};
+        HttpHeaders headers = new HttpHeaders();
+        headers.add("Authorization",auth);
+        return headers;
+    }
+
+    public final String getMd5(String input) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("MD5");
+            md.reset();
+            //md.update(input.getBytes(StandardCharsets.UTF_8));
+
+            String md5 = Base64.encodeBase64String(md.digest(input.getBytes()));
+            LOGGER.info("MD5::"+md5);
+            return md5;
+
+            //md.update(input.getBytes(StandardCharsets.UTF_8));
+            //md5 = String.format("%032x", new BigInteger(1, md.digest()));
+        } catch (NoSuchAlgorithmException e) {
+            LOGGER.error(e.getMessage());
+            return "ERROR";
+        }
     }
 }
