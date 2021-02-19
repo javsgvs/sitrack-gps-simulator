@@ -82,3 +82,12 @@ De manera predeterminada el contenido de la respuesta de error es en formato JSO
 "detailedMessage":"Exceeded timestamp difference: 602 seconds to UTC 00",
 "responseCode":401
 }
+
+
+USO
+http://localhost:8080/api/initDrive
+Al hacer una petición a este servicio, se inicia la simulación de un vehículo
+http://localhost:8080/api/cancel
+Al hacer una petición a este servicio, se detiene la simulación del vehículo
+http://localhost:8080/api/sentStatus
+Servicio programado a ejecutarse cada minuto para enviar datos gps al servicio sitrack
